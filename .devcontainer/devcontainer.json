@@ -1,0 +1,34 @@
+// .devcontainer/devcontainer.json
+{
+  "name": "Rust + InfluxDB v1 (Auto-Restore) Dev Environment",
+  "build": {
+    "dockerfile": "Dockerfile",
+    // Context is the parent directory containing .devcontainer/ and data/
+    "context": ".."
+  },
+
+  // Forward the InfluxDB port
+  "forwardPorts": [8086],
+
+  // --- Automated Restore Steps ---
+  // Runs ONCE after the container is created.
+  "postCreateCommand": "./scripts/post-create-command.sh",
+  // --- Start Service ---
+  // Runs EVERY time the container starts. Starts influxdb if not running.
+  "postStartCommand": "sudo service influxdb status || sudo service influxdb start",
+
+  // Optional: Add VS Code extensions
+  // "customizations": {
+  //   "vscode": {
+  //     "extensions": [
+  //       "rust-lang.rust-analyzer",
+  //       "serayuzgur.crates",
+  //       "tamasfe.even-better-toml"
+  //       // Add other extensions you need
+  //     ]
+  //   }
+  // },
+
+  // Run as the non-root user defined in Dockerfile
+  "remoteUser": "vscode"
+}
