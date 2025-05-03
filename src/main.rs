@@ -1,43 +1,16 @@
-use core::panic;
+use indicatif::{ProgressBar, ProgressState, ProgressStyle};
+use queries::{execute_query, get_measurements};
 use serde_json::json;
-use std::{
-    error::Error,
-    fs,
-    process::{Command, Stdio},
-};
+use std::{error::Error, fmt::Write, fs};
+
+mod queries;
 
 const DATABASE: &str = "solar_assistant";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     // 1. Get a list of all measurements
-    let output = Command::new("influx")
-        .arg("-database")
-        .arg(DATABASE)
-        .arg("-execute")
-        .arg("SHOW MEASUREMENTS")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?
-        .wait_with_output()?;
-
-    if !output.status.success() {
-        eprintln!(
-            "Error executing 'SHOW MEASUREMENTS': {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        return Ok(());
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-
-    let measurements: Vec<String> = stdout
-        .lines()
-        .skip(2) // Skip header lines
-        .filter(|line| !line.trim().is_empty() && *line != "----")
-        .map(|line| line.trim().to_string())
-        .collect();
-
+    let measurements = get_measurements()?;
     println!("Found measurements: {:?}", measurements);
 
     // Create an output directory if it doesn't exist
@@ -45,7 +18,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     for measurement in &measurements {
         let mut offset = 0;
-        let mut all_data: Vec<serde_json::Value> = Vec::new();
 
         let escaped_measurement = measurement.replace("\"", "\\\"");
 
@@ -80,10 +52,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 continue;
             }
         };
-        println!("max_rows: {}", max_rows);
+
+        let mut all_data: Vec<serde_json::Value> = Vec::with_capacity(max_rows as usize);
+
+        let pb = ProgressBar::new(max_rows);
+        pb.set_style(ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {human_pos}/{human_len} ({eta})")
+        .unwrap()
+        .with_key("eta", |state: &ProgressState, w: &mut dyn Write| write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap())
+        .progress_chars("#>-"));
 
         // continue;
         loop {
+            pb.set_position(all_data.len() as u64);
             if all_data.len() >= max_rows as usize {
                 break;
             }
@@ -123,8 +103,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     }
 
                     offset = all_data.len();
-
-                    println!("'{}': {:#?}", measurement, all_data.len());
                 }
                 Err(e) => {
                     eprintln!(
@@ -140,31 +118,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let json_output = serde_json::to_string_pretty(&all_data)?;
         fs::write(&filename, json_output)?;
 
-        println!("'{}' written to '{}'.", measurement, filename);
+        pb.finish_with_message(format!("'{}' written to '{}'.", measurement, filename));
     }
 
     Ok(())
-}
-
-fn execute_query(query: &str) -> String {
-    let output = Command::new("influx")
-        .arg("-database")
-        .arg(DATABASE)
-        .arg("-format")
-        .arg("json")
-        .arg("-execute")
-        .arg(query)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .expect("Failed to execute command");
-
-    if !output.status.success() {
-        panic!(
-            "Error executing query: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
-    String::from_utf8_lossy(&output.stdout).to_string()
 }
