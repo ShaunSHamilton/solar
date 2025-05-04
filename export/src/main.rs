@@ -7,8 +7,7 @@ mod queries;
 
 const DATABASE: &str = "solar_assistant";
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<(), Box<dyn Error>> {
     // 1. Get a list of all measurements
     let measurements = get_measurements()?;
     println!("Found measurements: {:?}", measurements);
